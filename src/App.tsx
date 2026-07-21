@@ -21,9 +21,34 @@ function App() {
   const { loadPreferences, loadDirectory, currentDirectory, sidebarVisible, isDirty, saveCurrentFile, presentationMode } = useStore()
 
 
-  // Load preferences and setup on mount
+  // Load preferences (which may load the last directory) and setup on mount
   useEffect(() => {
-    loadPreferences()
+    const openPath = async (path: string) => {
+      const name = path.split('/').pop() ?? path
+      await useStore.getState().loadFile({ name, path, modified: false })
+    }
+
+    const init = async () => {
+      await loadPreferences()
+
+      // Open files requested via "Open With ExcaliApp" / double-clicking a .excalidraw file.
+      // Must run after loadPreferences (which may load the last directory and reset open tabs).
+      try {
+        const paths = await invoke<string[]>('take_pending_open_files')
+        for (const path of paths) {
+          await openPath(path)
+        }
+      } catch (error) {
+        console.error('Failed to check pending open files:', error)
+      }
+    }
+    init()
+
+    const unlisten = listen<string>('open-file-request', (event) => openPath(event.payload))
+
+    return () => {
+      unlisten.then((fn) => fn())
+    }
   }, [])
 
   // Listen for file system changes

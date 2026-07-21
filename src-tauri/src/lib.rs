@@ -61,6 +61,15 @@ pub struct AppState {
     pub modified_files: Mutex<Vec<String>>,
 }
 
+pub struct PendingOpenFiles {
+    pub files: Mutex<Vec<String>>,
+}
+
+#[tauri::command]
+fn take_pending_open_files(state: State<PendingOpenFiles>) -> Vec<String> {
+    std::mem::take(&mut *state.files.lock().unwrap())
+}
+
 #[tauri::command]
 async fn select_directory(app: AppHandle) -> Result<Option<String>, String> {
     use std::sync::mpsc;
@@ -642,6 +651,33 @@ async fn watch_directory(
     Ok(())
 }
 
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+fn handle_opened_urls<R: tauri::Runtime>(app_handle: &AppHandle<R>, urls: Vec<tauri::Url>) {
+    let paths: Vec<String> = urls
+        .into_iter()
+        .filter_map(|url| url.to_file_path().ok())
+        .filter(|path| {
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("excalidraw"))
+                .unwrap_or(false)
+        })
+        .map(|path| path.to_string_lossy().to_string())
+        .collect();
+
+    if paths.is_empty() {
+        return;
+    }
+
+    if let Some(state) = app_handle.try_state::<PendingOpenFiles>() {
+        state.files.lock().unwrap().extend(paths.iter().cloned());
+    }
+
+    for path in paths {
+        let _ = app_handle.emit("open-file-request", path);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -649,6 +685,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .manage(PendingOpenFiles {
+            files: Mutex::new(Vec::new()),
+        })
         .setup(|app| {
             app.manage(AppState {
                 current_directory: Mutex::new(None),
@@ -712,7 +751,14 @@ pub fn run() {
             set_menu_visible,
             set_decorations,
             force_close_app,
+            take_pending_open_files,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(move |_app_handle, _event| {
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+            if let tauri::RunEvent::Opened { urls } = _event {
+                handle_opened_urls(_app_handle, urls);
+            }
+        });
 }

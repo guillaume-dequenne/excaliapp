@@ -26,6 +26,7 @@ export function useMenuHandler() {
     saveCurrentFile,
     activeFile,
     toggleSidebar,
+    toggleTheme,
     preferences,
     savePreferences,
   } = useStore()
@@ -85,6 +86,10 @@ export function useMenuHandler() {
             toggleSidebar()
             break
 
+          case 'toggle_theme':
+            toggleTheme()
+            break
+
           case 'zoom_in':
             handleZoomIn()
             break
@@ -135,6 +140,7 @@ export function useMenuHandler() {
     saveCurrentFile,
     activeFile,
     toggleSidebar,
+    toggleTheme,
     preferences,
     savePreferences,
   ])
@@ -324,6 +330,7 @@ File:
 
 View:
   Toggle Sidebar: Cmd/Ctrl+B
+  Toggle Theme: Cmd/Ctrl+Shift+T
   Zoom In: Cmd/Ctrl++
   Zoom Out: Cmd/Ctrl+-
   Reset Zoom: Cmd/Ctrl+0

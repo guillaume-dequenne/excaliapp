@@ -124,6 +124,10 @@ fn create_view_menu<R: Runtime>(
         .accelerator("CmdOrCtrl+B")
         .build(app)?;
 
+    let toggle_theme = MenuItemBuilder::with_id("toggle_theme", "Toggle Theme")
+        .accelerator("CmdOrCtrl+Shift+T")
+        .build(app)?;
+
     let separator = PredefinedMenuItem::separator(app)?;
 
     let zoom_in = MenuItemBuilder::with_id("zoom_in", "Zoom In")
@@ -153,6 +157,7 @@ fn create_view_menu<R: Runtime>(
     let view_menu = SubmenuBuilder::new(app, "View")
         .items(&[
             &toggle_sidebar,
+            &toggle_theme,
             &separator,
             &zoom_in,
             &zoom_out,

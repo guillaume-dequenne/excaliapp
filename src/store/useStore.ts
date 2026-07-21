@@ -134,6 +134,7 @@ interface AppStore {
   togglePresentationMode: () => void
   closeTab: (filePath: string) => Promise<void>
   toggleDecorations: () => void
+  toggleTheme: () => void
 
   // Async actions
   loadDirectory: (dir: string) => Promise<void>
@@ -829,6 +830,19 @@ export const useStore = create<AppStore>((set, get) => ({
     } catch (error) {
       console.error('Failed to save preferences:', error)
     }
+  },
+
+  // Toggle theme between light and dark (becomes an explicit override, even if 'system' before)
+  toggleTheme: () => {
+    const state = get()
+    const isDark = document.documentElement.classList.contains('dark')
+    const newTheme: 'light' | 'dark' = isDark ? 'light' : 'dark'
+
+    document.documentElement.classList.toggle('dark', newTheme === 'dark')
+
+    const newPrefs = { ...state.preferences, theme: newTheme }
+    set({ preferences: newPrefs })
+    state.savePreferences()
   },
 
   // Toggle sidebar
