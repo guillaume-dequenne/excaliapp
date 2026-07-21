@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, memo } from 'react'
+import { useState, useRef, useEffect, useMemo, memo } from 'react'
 import {
   ChevronDown,
   ChevronRight,
@@ -17,6 +17,11 @@ import { useStore } from '../store/useStore'
 import { ask, message } from '@tauri-apps/plugin-dialog'
 import { promptForName } from '../lib/namePrompt'
 
+interface RevealRequest {
+  targetPath: string
+  nonce: number
+}
+
 interface TreeViewProps {
   nodes: FileTreeNode[]
   onFileClick: (node: FileTreeNode) => void
@@ -28,6 +33,8 @@ interface TreeNodeProps {
   onFileClick: (node: FileTreeNode) => void
   activeFilePath?: string
   depth: number
+  forceExpandedPaths: Set<string>
+  revealRequest: RevealRequest | null
 }
 
 function displayName(node: FileTreeNode): string {
@@ -38,8 +45,34 @@ function isPathInsideDirectory(path: string, directory: string): boolean {
   return path === directory || path.startsWith(`${directory}/`) || path.startsWith(`${directory}\\`)
 }
 
-const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, depth }: TreeNodeProps) {
+// Directory paths strictly between rootDir and filePath, e.g. for
+// filePath "/root/a/b/file.excalidraw" and rootDir "/root" -> {"/root/a", "/root/a/b"}
+function getAncestorPaths(filePath: string, rootDir: string | null): Set<string> {
+  const ancestors = new Set<string>()
+  if (!rootDir || !filePath.startsWith(rootDir)) return ancestors
+
+  const relative = filePath.slice(rootDir.length).replace(/^[/\\]/, '')
+  const segments = relative.split(/[/\\]/).filter(Boolean)
+  segments.pop() // drop the filename itself
+
+  let acc = rootDir
+  for (const segment of segments) {
+    acc = `${acc}/${segment}`
+    ancestors.add(acc)
+  }
+  return ancestors
+}
+
+const TreeNode = memo(function TreeNode({
+  node,
+  onFileClick,
+  activeFilePath,
+  depth,
+  forceExpandedPaths,
+  revealRequest,
+}: TreeNodeProps) {
   const [isExpanded, setIsExpanded] = useState(depth === 0)
+  const nodeRef = useRef<HTMLDivElement>(null)
   const [isRenaming, setIsRenaming] = useState(false)
   const [newName, setNewName] = useState(displayName(node))
   const [showMenu, setShowMenu] = useState(false)
@@ -63,6 +96,20 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
       renameInputRef.current.select()
     }
   }, [isRenaming])
+
+  useEffect(() => {
+    if (revealRequest && forceExpandedPaths.has(node.path)) {
+      setIsExpanded(true)
+    }
+  }, [revealRequest])
+
+  useEffect(() => {
+    if (revealRequest && node.path === revealRequest.targetPath) {
+      requestAnimationFrame(() => {
+        nodeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+    }
+  }, [revealRequest])
 
   useEffect(() => {
     if (!isRenaming) {
@@ -217,6 +264,7 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
   return (
     <div className="relative">
       <div
+        ref={nodeRef}
         className={cn(
           'tree-node w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors group relative',
           isActive && 'active',
@@ -348,6 +396,8 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
               onFileClick={onFileClick}
               activeFilePath={activeFilePath}
               depth={depth + 1}
+              forceExpandedPaths={forceExpandedPaths}
+              revealRequest={revealRequest}
             />
           ))}
         </div>
@@ -357,6 +407,14 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
 })
 
 export function TreeView({ nodes, onFileClick, activeFilePath }: TreeViewProps) {
+  const revealRequest = useStore((state) => state.revealRequest)
+  const currentDirectory = useStore((state) => state.currentDirectory)
+
+  const forceExpandedPaths = useMemo(
+    () => (revealRequest ? getAncestorPaths(revealRequest.targetPath, currentDirectory) : new Set<string>()),
+    [revealRequest, currentDirectory]
+  )
+
   if (nodes.length === 0) {
     return (
       <div className="sidebar-muted text-sm text-center py-8">
@@ -364,7 +422,7 @@ export function TreeView({ nodes, onFileClick, activeFilePath }: TreeViewProps) 
       </div>
     )
   }
-  
+
   return (
     <div className="space-y-1">
       {nodes.map((node) => (
@@ -374,6 +432,8 @@ export function TreeView({ nodes, onFileClick, activeFilePath }: TreeViewProps) 
           onFileClick={onFileClick}
           activeFilePath={activeFilePath}
           depth={0}
+          forceExpandedPaths={forceExpandedPaths}
+          revealRequest={revealRequest}
         />
       ))}
     </div>

@@ -118,6 +118,7 @@ interface AppStore {
   isDirty: boolean
   presentationMode: boolean
   openTabs: OpenTab[]
+  revealRequest: { targetPath: string; nonce: number } | null
 
   // Actions
   setCurrentDirectory: (dir: string | null) => void
@@ -135,6 +136,7 @@ interface AppStore {
   closeTab: (filePath: string) => Promise<void>
   toggleDecorations: () => void
   toggleTheme: () => void
+  revealActiveFileInSidebar: () => void
 
   // Async actions
   loadDirectory: (dir: string) => Promise<void>
@@ -172,6 +174,7 @@ export const useStore = create<AppStore>((set, get) => ({
   isDirty: false,
   presentationMode: false,
   openTabs: [],
+  revealRequest: null,
 
   // Basic setters
   setCurrentDirectory: (dir) => set({ currentDirectory: dir }),
@@ -855,6 +858,22 @@ export const useStore = create<AppStore>((set, get) => ({
     const newPrefs = { ...state.preferences, sidebarVisible: newVisible }
     set({ preferences: newPrefs })
     state.savePreferences()
+  },
+
+  // Reveal the active file in the sidebar tree: show the sidebar if hidden,
+  // expand its ancestor folders, and scroll it into view
+  revealActiveFileInSidebar: () => {
+    const state = get()
+    if (!state.activeFile) return
+
+    if (!state.sidebarVisible) {
+      set({ sidebarVisible: true })
+      const newPrefs = { ...state.preferences, sidebarVisible: true }
+      set({ preferences: newPrefs })
+      state.savePreferences()
+    }
+
+    set({ revealRequest: { targetPath: state.activeFile.path, nonce: Date.now() } })
   },
 
   // Toggle presentation mode

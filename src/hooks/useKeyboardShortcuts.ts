@@ -134,19 +134,39 @@ export function useKeyboardShortcuts() {
         }
       }
 
+      const switchTab = async (direction: 1 | -1) => {
+        if (openTabs.length > 1 && activeFile) {
+          const currentIndex = openTabs.findIndex((f) => f.path === activeFile.path)
+          const nextIndex = (currentIndex + direction + openTabs.length) % openTabs.length
+          await loadFile(openTabs[nextIndex])
+        }
+      }
+
       // Cmd/Ctrl + Tab / Cmd/Ctrl + Shift + Tab: Switch tabs
       if (modKey && e.key === 'Tab') {
         e.preventDefault()
-        if (openTabs.length > 1 && activeFile) {
-          const currentIndex = openTabs.findIndex((f) => f.path === activeFile.path)
-          if (e.shiftKey) {
-            const prevIndex = currentIndex === 0 ? openTabs.length - 1 : currentIndex - 1
-            await loadFile(openTabs[prevIndex])
-          } else {
-            const nextIndex = (currentIndex + 1) % openTabs.length
-            await loadFile(openTabs[nextIndex])
-          }
+        await switchTab(e.shiftKey ? -1 : 1)
+      }
+
+      // Cmd/Ctrl + Shift + [ / ]: Switch tabs (Safari/Chrome/Xcode convention)
+      if (modKey && e.shiftKey && (e.key === '[' || e.key === ']')) {
+        e.preventDefault()
+        await switchTab(e.key === ']' ? 1 : -1)
+      }
+
+      // Cmd/Ctrl + 1-9: Jump to tab N
+      if (modKey && !e.shiftKey && /^[1-9]$/.test(e.key)) {
+        const index = Number(e.key) - 1
+        if (openTabs[index]) {
+          e.preventDefault()
+          await loadFile(openTabs[index])
         }
+      }
+
+      // Option/Alt + F1: Reveal the active file in the sidebar
+      if (e.altKey && e.key === 'F1') {
+        e.preventDefault()
+        useStore.getState().revealActiveFileInSidebar()
       }
     }
 

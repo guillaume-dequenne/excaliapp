@@ -336,6 +336,13 @@ View:
   Reset Zoom: Cmd/Ctrl+0
   Fullscreen: F11 (Ctrl+Cmd+F on Mac)
 
+Tabs:
+  Next Tab: Cmd/Ctrl+Tab or Cmd/Ctrl+Shift+]
+  Previous Tab: Cmd/Ctrl+Shift+Tab or Cmd/Ctrl+Shift+[
+  Jump to Tab 1-9: Cmd/Ctrl+1...9
+  Close Tab: Cmd/Ctrl+W
+  Reveal Active File in Sidebar: Option+F1
+
 Window:
   Minimize: Cmd/Ctrl+M
   Close Window: Cmd/Ctrl+W
