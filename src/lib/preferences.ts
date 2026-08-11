@@ -7,6 +7,8 @@ export function convertPreferencesFromRust(rustPrefs: any): Preferences {
   return {
     lastDirectory: rustPrefs?.last_directory || rustPrefs?.lastDirectory || null,
     recentDirectories: rustPrefs?.recent_directories || rustPrefs?.recentDirectories || [],
+    lastOpenFiles: rustPrefs?.last_open_files || rustPrefs?.lastOpenFiles || [],
+    activeFilePath: rustPrefs?.active_file_path || rustPrefs?.activeFilePath || null,
     theme: rustPrefs?.theme || 'system',
     sidebarVisible: rustPrefs?.sidebar_visible !== undefined
       ? rustPrefs.sidebar_visible
@@ -24,6 +26,8 @@ export function convertPreferencesToRust(tsPrefs: Preferences): any {
   return {
     last_directory: tsPrefs.lastDirectory || null,
     recent_directories: tsPrefs.recentDirectories || [],
+    last_open_files: tsPrefs.lastOpenFiles || [],
+    active_file_path: tsPrefs.activeFilePath || null,
     theme: tsPrefs.theme || 'system',
     sidebar_visible: tsPrefs.sidebarVisible !== undefined ? tsPrefs.sidebarVisible : true,
     show_decorations: tsPrefs.showDecorations !== undefined ? tsPrefs.showDecorations : true,

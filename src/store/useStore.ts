@@ -6,6 +6,9 @@ import { ask } from '@tauri-apps/plugin-dialog'
 
 type UnsavedChangesDecision = 'save' | 'discard' | 'cancel'
 type FileLoadSource = 'cache' | 'disk' | null
+type LoadDirectoryOptions = {
+  preserveSession?: boolean
+}
 
 interface FileContentResult {
   content: string
@@ -105,6 +108,44 @@ function replacePathPrefix(path: string, oldPrefix: string, newPrefix: string): 
   return path
 }
 
+function uniquePaths(paths: string[]): string[] {
+  return Array.from(new Set(paths))
+}
+
+function withOpenSession(
+  preferences: Preferences,
+  openTabs: Pick<OpenTab, 'path'>[],
+  activeFile: ExcalidrawFile | null
+): Preferences {
+  const lastOpenFiles = uniquePaths(openTabs.map((tab) => tab.path))
+  const activeFilePath =
+    activeFile && lastOpenFiles.includes(activeFile.path)
+      ? activeFile.path
+      : lastOpenFiles[0] ?? null
+
+  return {
+    ...preferences,
+    lastOpenFiles,
+    activeFilePath,
+  }
+}
+
+function clearOpenSession(preferences: Preferences): Preferences {
+  return {
+    ...preferences,
+    lastOpenFiles: [],
+    activeFilePath: null,
+  }
+}
+
+function sameOpenSession(a: Preferences, b: Preferences): boolean {
+  return (
+    a.activeFilePath === b.activeFilePath &&
+    a.lastOpenFiles.length === b.lastOpenFiles.length &&
+    a.lastOpenFiles.every((path, index) => path === b.lastOpenFiles[index])
+  )
+}
+
 interface AppStore {
   // State
   currentDirectory: string | null
@@ -139,7 +180,7 @@ interface AppStore {
   revealActiveFileInSidebar: () => void
 
   // Async actions
-  loadDirectory: (dir: string) => Promise<void>
+  loadDirectory: (dir: string, options?: LoadDirectoryOptions) => Promise<void>
   loadFileTree: (dir: string) => Promise<void>
   loadFile: (file: ExcalidrawFile) => Promise<void>
   loadFileFromTree: (node: FileTreeNode) => Promise<void>
@@ -166,6 +207,8 @@ export const useStore = create<AppStore>((set, get) => ({
   preferences: {
     lastDirectory: null,
     recentDirectories: [],
+    lastOpenFiles: [],
+    activeFilePath: null,
     theme: 'system',
     sidebarVisible: true,
     showDecorations: true,
@@ -231,7 +274,7 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   // Load directory and list files
-  loadDirectory: async (dir) => {
+  loadDirectory: async (dir, options = {}) => {
     try {
       const state = get()
       const [files, fileTree] = await Promise.all([
@@ -267,8 +310,9 @@ export const useStore = create<AppStore>((set, get) => ({
         recentDirs.pop()
       }
       
+      const sessionPrefs = options.preserveSession ? prefs : clearOpenSession(prefs)
       const newPrefs: Preferences = {
-        ...prefs,
+        ...sessionPrefs,
         lastDirectory: dir,
         recentDirectories: recentDirs,
       }
@@ -352,12 +396,20 @@ export const useStore = create<AppStore>((set, get) => ({
         })
 
         if (diskHash === existingTab.contentHash) {
+          const activeFile = toExcalidrawFile(existingTab)
+          const newPrefs = withOpenSession(
+            latestState.preferences,
+            latestState.openTabs,
+            activeFile
+          )
           set({
-            activeFile: toExcalidrawFile(existingTab),
+            activeFile,
             fileContent: existingTab.cachedContent,
             activeFileLoadSource: 'cache',
             isDirty: existingTab.modified,
+            preferences: newPrefs,
           })
+          await get().savePreferences()
           return
         }
       }
@@ -371,13 +423,17 @@ export const useStore = create<AppStore>((set, get) => ({
         ? get().openTabs.map((tab) => (tab.path === file.path ? updatedTab : tab))
         : [...get().openTabs, updatedTab]
 
+      const newPrefs = withOpenSession(get().preferences, openTabs, updatedFile)
+
       set({
         activeFile: updatedFile,
         fileContent: updatedTab.cachedContent,
         activeFileLoadSource: 'disk',
         isDirty: false,
         openTabs,
+        preferences: newPrefs,
       })
+      await get().savePreferences()
 
       state.markFileAsModified(file.path, false)
       state.markTreeNodeAsModified(file.path, false)
@@ -635,13 +691,18 @@ export const useStore = create<AppStore>((set, get) => ({
         path: newPath,
         modified: state.activeFile?.path === oldPath ? state.isDirty : false,
       }
+      const openTabs = state.openTabs.map((tab) =>
+        tab.path === oldPath ? { ...tab, name: finalName, path: newPath } : tab
+      )
+      const activeFile = state.activeFile?.path === oldPath ? renamedFile : state.activeFile
+      const newPrefs = withOpenSession(state.preferences, openTabs, activeFile)
 
       set({
-        activeFile: state.activeFile?.path === oldPath ? renamedFile : state.activeFile,
-        openTabs: state.openTabs.map((tab) =>
-          tab.path === oldPath ? { ...tab, name: finalName, path: newPath } : tab
-        ),
+        activeFile,
+        openTabs,
+        preferences: newPrefs,
       })
+      await get().savePreferences()
 
       // Reload the file tree
       if (state.currentDirectory) {
@@ -682,11 +743,14 @@ export const useStore = create<AppStore>((set, get) => ({
             name: fileNameFromPath(replacePathPrefix(state.activeFile.path, oldPath, newPath)),
           }
         : state.activeFile
+      const newPrefs = withOpenSession(state.preferences, updatedTabs, activeFile)
 
       set({
         activeFile,
         openTabs: updatedTabs,
+        preferences: newPrefs,
       })
+      await get().savePreferences()
 
       if (state.currentDirectory) {
         await state.loadFileTree(state.currentDirectory)
@@ -704,6 +768,8 @@ export const useStore = create<AppStore>((set, get) => ({
       await invoke('delete_file', { filePath })
       const state = get()
       const openTabs = state.openTabs.filter((tab) => tab.path !== filePath)
+      const activeFile = state.activeFile?.path === filePath ? null : state.activeFile
+      const newPrefs = withOpenSession(state.preferences, openTabs, activeFile)
       
       if (state.activeFile?.path === filePath) {
         set({
@@ -712,10 +778,12 @@ export const useStore = create<AppStore>((set, get) => ({
           fileContent: null,
           activeFileLoadSource: null,
           isDirty: false,
+          preferences: newPrefs,
         })
       } else {
-        set({ openTabs })
+        set({ openTabs, preferences: newPrefs })
       }
+      await get().savePreferences()
       
       if (state.currentDirectory) {
         await state.loadFileTree(state.currentDirectory)
@@ -735,6 +803,10 @@ export const useStore = create<AppStore>((set, get) => ({
       await invoke('delete_folder', { folderPath })
       const state = get()
       const openTabs = state.openTabs.filter((tab) => !isPathInsideDirectory(tab.path, folderPath))
+      const activeFile = state.activeFile && isPathInsideDirectory(state.activeFile.path, folderPath)
+        ? null
+        : state.activeFile
+      const newPrefs = withOpenSession(state.preferences, openTabs, activeFile)
 
       if (state.activeFile && isPathInsideDirectory(state.activeFile.path, folderPath)) {
         set({
@@ -743,10 +815,12 @@ export const useStore = create<AppStore>((set, get) => ({
           fileContent: null,
           activeFileLoadSource: null,
           isDirty: false,
+          preferences: newPrefs,
         })
       } else {
-        set({ openTabs })
+        set({ openTabs, preferences: newPrefs })
       }
+      await get().savePreferences()
 
       if (state.currentDirectory) {
         await state.loadFileTree(state.currentDirectory)
@@ -797,7 +871,7 @@ export const useStore = create<AppStore>((set, get) => ({
       // Auto-load last directory if it exists
       if (safePrefs.lastDirectory) {
         try {
-          await get().loadDirectory(safePrefs.lastDirectory)
+          await get().loadDirectory(safePrefs.lastDirectory, { preserveSession: true })
         } catch (dirError) {
           console.error('Failed to auto-load last directory:', dirError)
           // Clear the invalid lastDirectory from preferences
@@ -806,12 +880,61 @@ export const useStore = create<AppStore>((set, get) => ({
           await get().savePreferences()
         }
       }
+
+      const pathsToRestore = uniquePaths(safePrefs.lastOpenFiles || [])
+      if (pathsToRestore.length > 0) {
+        const restoredTabs: OpenTab[] = []
+
+        for (const path of pathsToRestore) {
+          try {
+            restoredTabs.push(
+              await readOpenTabFromDisk({
+                name: fileNameFromPath(path),
+                path,
+                modified: false,
+              })
+            )
+          } catch (restoreError) {
+            console.warn(`Failed to restore previously open file "${path}":`, restoreError)
+          }
+        }
+
+        const preferredActivePath =
+          safePrefs.activeFilePath &&
+          restoredTabs.some((tab) => tab.path === safePrefs.activeFilePath)
+            ? safePrefs.activeFilePath
+            : restoredTabs[0]?.path ?? null
+        const activeTab = restoredTabs.find((tab) => tab.path === preferredActivePath) ?? null
+        const activeFile = activeTab ? toExcalidrawFile(activeTab) : null
+        const currentPrefs = get().preferences
+        const newPrefs = withOpenSession(currentPrefs, restoredTabs, activeFile)
+
+        set({
+          openTabs: restoredTabs,
+          activeFile,
+          fileContent: activeTab?.cachedContent ?? null,
+          activeFileLoadSource: activeTab ? 'disk' : null,
+          isDirty: false,
+          preferences: newPrefs,
+        })
+
+        if (!sameOpenSession(currentPrefs, newPrefs)) {
+          await get().savePreferences()
+        }
+      } else if (safePrefs.activeFilePath) {
+        const currentPrefs = get().preferences
+        const newPrefs = clearOpenSession(currentPrefs)
+        set({ preferences: newPrefs })
+        await get().savePreferences()
+      }
     } catch (error) {
       console.error('Failed to load preferences:', error)
       // Set default preferences if loading fails
       const defaultPrefs: Preferences = {
         lastDirectory: null,
         recentDirectories: [],
+        lastOpenFiles: [],
+        activeFilePath: null,
         theme: 'system',
         sidebarVisible: true,
         showDecorations: true,
@@ -965,16 +1088,21 @@ export const useStore = create<AppStore>((set, get) => ({
         set({ openTabs: newTabs })
         await get().loadFile(newActiveTab)
       } else {
+        const newPrefs = withOpenSession(state.preferences, newTabs, null)
         set({
           openTabs: newTabs,
           activeFile: null,
           fileContent: null,
           activeFileLoadSource: null,
           isDirty: false,
+          preferences: newPrefs,
         })
+        await get().savePreferences()
       }
     } else {
-      set({ openTabs: newTabs })
+      const newPrefs = withOpenSession(state.preferences, newTabs, state.activeFile)
+      set({ openTabs: newTabs, preferences: newPrefs })
+      await get().savePreferences()
     }
   },
 

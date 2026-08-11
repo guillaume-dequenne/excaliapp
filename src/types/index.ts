@@ -35,6 +35,8 @@ export interface AppState {
 export interface Preferences {
   lastDirectory: string | null
   recentDirectories: string[]
+  lastOpenFiles: string[]
+  activeFilePath: string | null
   theme: 'light' | 'dark' | 'system'
   sidebarVisible: boolean
   showDecorations: boolean

@@ -34,6 +34,9 @@ pub struct FileTreeNode {
 pub struct Preferences {
     pub last_directory: Option<String>,
     pub recent_directories: Vec<String>,
+    #[serde(default)]
+    pub last_open_files: Vec<String>,
+    pub active_file_path: Option<String>,
     pub theme: String,
     pub sidebar_visible: bool,
     #[serde(default = "default_true")]
@@ -49,6 +52,8 @@ impl Default for Preferences {
         Self {
             last_directory: None,
             recent_directories: Vec::new(),
+            last_open_files: Vec::new(),
+            active_file_path: None,
             theme: "system".to_string(),
             sidebar_visible: true,
             show_decorations: true,
