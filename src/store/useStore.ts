@@ -174,6 +174,7 @@ interface AppStore {
   markFileAsModified: (filePath: string, modified: boolean) => void
   markTreeNodeAsModified: (filePath: string, modified: boolean) => void
   togglePresentationMode: () => void
+  reorderTabs: (activePath: string, overPath: string) => Promise<void>
   closeTab: (filePath: string) => Promise<void>
   toggleDecorations: () => void
   toggleTheme: () => void
@@ -1033,6 +1034,25 @@ export const useStore = create<AppStore>((set, get) => ({
         console.error('Failed to toggle window decorations:', error)
         alert(`Failed to toggle window decorations: ${error}`)
       })
+  },
+
+  // Reorder tabs and persist their new session order
+  reorderTabs: async (activePath, overPath) => {
+    const state = get()
+    const oldIndex = state.openTabs.findIndex((tab) => tab.path === activePath)
+    const newIndex = state.openTabs.findIndex((tab) => tab.path === overPath)
+
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
+      return
+    }
+
+    const openTabs = [...state.openTabs]
+    const [movedTab] = openTabs.splice(oldIndex, 1)
+    openTabs.splice(newIndex, 0, movedTab)
+
+    const preferences = withOpenSession(state.preferences, openTabs, state.activeFile)
+    set({ openTabs, preferences })
+    await get().savePreferences()
   },
 
   // Close tab
