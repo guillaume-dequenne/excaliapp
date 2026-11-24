@@ -126,9 +126,17 @@ export function useMenuHandler() {
       })
     }
 
-    setupListener()
+    // listen() is async: if cleanup runs before it resolves, unregister as soon as it does,
+    // otherwise listeners accumulate and each menu command runs multiple times.
+    let cancelled = false
+    setupListener().then(() => {
+      if (cancelled && unlisten) {
+        unlisten()
+      }
+    })
 
     return () => {
+      cancelled = true
       if (unlisten) {
         unlisten()
       }
